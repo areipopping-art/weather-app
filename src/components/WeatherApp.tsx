@@ -135,9 +135,9 @@ export default function WeatherApp() {
       </p>
 
       {data && day && (
-        <div className="mt-2 grid gap-4 md:grid-cols-[1fr_300px]">
+        <div className="mt-2 grid gap-4 md:grid-cols-[minmax(0,1fr)_300px]">
           {/* 選んだ日の天気 */}
-          <section className="rounded-3xl border border-line bg-gradient-to-br from-sky to-lavender p-5 shadow-soft">
+          <section className="min-w-0 rounded-3xl border border-line bg-gradient-to-br from-sky to-lavender p-5 shadow-soft">
             <div className="flex items-baseline justify-between gap-2">
               <h2 className="text-xl font-bold">{data.place.name}</h2>
               <p className="text-sm opacity-75">
@@ -169,8 +169,8 @@ export default function WeatherApp() {
                     ["風速", `${data.current.wind.toFixed(1)} m/s`],
                   ]
                 : [
-                    ["最高 / 最低", `${Math.round(day.max)}° / ${Math.round(day.min)}°`],
-                    ["湿度（平均）", `${day.humidity}%`],
+                    ["最高/最低", `${Math.round(day.max)}°/${Math.round(day.min)}°`],
+                    ["平均湿度", `${day.humidity}%`],
                     ["降水確率", `${day.pop}%`],
                     ["最大風速", `${day.wind.toFixed(1)} m/s`],
                   ]

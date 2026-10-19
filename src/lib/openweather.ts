@@ -41,10 +41,35 @@ const toPlace = (g: GeoResult): Place => ({
   lon: g.lon,
 });
 
+// 日本語（ひらがな・カタカナ・漢字）だけの入力か
+const isJapanese = (s: string) => /^[぀-ヿ㐀-鿿々ー]+$/.test(s);
+
 export async function findCity(query: string): Promise<Place> {
-  const results = await owm<GeoResult[]>("/geo/1.0/direct", { q: query, limit: 1 });
-  if (!results.length) throw new WeatherError(`「${query}」が見つかりませんでした`, 404);
-  return toPlace(results[0]);
+  // 日本語の地名は「福岡」→中国の地名、「京都」→中国の地区…のように外れやすい。
+  // 「〇〇市」→「〇〇」の順に試し、日本の結果を優先する。
+  if (!isJapanese(query)) {
+    const results = await owm<GeoResult[]>("/geo/1.0/direct", { q: query, limit: 1 });
+    if (!results.length) throw new WeatherError(`「${query}」が見つかりませんでした`, 404);
+    return toPlace(results[0]);
+  }
+
+  // 「京都府」「福岡県」は県庁所在地の「京都市」「福岡市」でも探す
+  const base = query.replace(/[府県]$/, "");
+  const candidates = /[市区町村]$/.test(query) ? [query] : [...new Set([`${base}市`, query])];
+  const lists = await Promise.all(
+    candidates.map((q) => owm<GeoResult[]>("/geo/1.0/direct", { q, limit: 5 }))
+  );
+  const all = lists.flat();
+  const jaName = (r: GeoResult) => r.local_names?.ja ?? r.name;
+
+  // 1. 入力した文字で始まる日本の地名（「東京」→「東京都」、「西東京市」は除外）
+  // 2. 日本の地名  3. なんでも
+  const best =
+    all.find((r) => r.country === "JP" && jaName(r).startsWith(query)) ??
+    all.find((r) => r.country === "JP") ??
+    all[0];
+  if (!best) throw new WeatherError(`「${query}」が見つかりませんでした`, 404);
+  return toPlace(best);
 }
 
 export async function placeFromCoords(lat: number, lon: number): Promise<Place> {
