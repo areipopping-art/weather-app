@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { Day } from "@/lib/types";
-import { WEEK, weatherEmoji } from "@/lib/icons";
+import { WEEK, codeEmoji, codeText } from "@/lib/icons";
 
 type Props = {
   days: Day[];
@@ -89,7 +89,7 @@ export default function Calendar({ days, today, selected, onSelect }: Props) {
               type="button"
               onClick={() => onSelect(date)}
               aria-pressed={isSelected}
-              aria-label={`${view.m}月${day}日 ${info.description}`}
+              aria-label={`${view.m}月${day}日 ${codeText(info.code)}`}
               className={`flex aspect-square flex-col items-center justify-center rounded-xl transition ${
                 isSelected
                   ? "bg-lavender font-bold shadow-sm ring-2 ring-accent"
@@ -97,12 +97,12 @@ export default function Calendar({ days, today, selected, onSelect }: Props) {
               }`}
             >
               <span className={isToday ? "underline decoration-2 underline-offset-2" : ""}>{day}</span>
-              <span className="text-base leading-none sm:text-lg">{weatherEmoji(info.icon)}</span>
+              <span className="text-base leading-none sm:text-lg">{codeEmoji(info.code)}</span>
             </button>
           );
         })}
       </div>
-      <p className="mt-3 text-center text-xs text-muted">色のついた日（今日〜5日後）の予報を選べます</p>
+      <p className="mt-3 text-center text-xs text-muted">色のついた日（今日〜6日後）の予報を選べます</p>
     </div>
   );
 }

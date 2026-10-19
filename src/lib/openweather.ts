@@ -1,10 +1,12 @@
 import "server-only";
-import type { Day, Slot, WeatherResponse } from "./types";
+import type { WeatherResponse } from "./types";
+import { getForecast, getPollen } from "./openmeteo";
 
 // OpenWeatherMap 無料プランで使える API だけを使う
 // - Geocoding API      /geo/1.0/direct, /geo/1.0/reverse
 // - Current Weather    /data/2.5/weather
-// - 5 Day / 3 Hour     /data/2.5/forecast
+// - Air Pollution    /data/2.5/air_pollution（PM2.5）
+// 1時間ごとの予報・UV・花粉は Open-Meteo（openmeteo.ts）から取る
 const BASE = "https://api.openweathermap.org";
 
 export class WeatherError extends Error {
@@ -82,104 +84,69 @@ type CurrentApi = {
   timezone: number;
   main: { temp: number; feels_like: number; humidity: number };
   wind: { speed: number };
-  weather: { description: string; icon: string }[];
+  weather: { id: number; description: string; icon: string }[];
 };
 
-type ForecastApi = {
-  city: { timezone: number };
-  list: {
-    dt: number;
-    main: { temp: number; temp_min: number; temp_max: number; humidity: number };
-    wind: { speed: number };
-    pop: number;
-    weather: { description: string; icon: string }[];
-  }[];
-};
+type AirApi = { list: { dt: number; components: { pm2_5: number } }[] };
 
-// UNIX 秒 + タイムゾーン差 → 現地の "YYYY-MM-DD" と "HH:MM"
-function local(dt: number, tz: number) {
-  const iso = new Date((dt + tz) * 1000).toISOString();
-  return { date: iso.slice(0, 10), time: iso.slice(11, 16) };
-}
+// UNIX 秒 + タイムゾーン差 → 現地の "YYYY-MM-DDTHH:MM"
+const localIso = (dt: number, tz: number) => new Date((dt + tz) * 1000).toISOString().slice(0, 16);
 
 export async function getWeather(place: Place): Promise<WeatherResponse> {
-  const common = { lat: place.lat, lon: place.lon, units: "metric", lang: "ja" };
-  const [cur, fc] = await Promise.all([
-    owm<CurrentApi>("/data/2.5/weather", common),
-    owm<ForecastApi>("/data/2.5/forecast", common),
+  const { lat, lon } = place;
+  const [cur, airNow, airFc, forecast, pollen] = await Promise.all([
+    owm<CurrentApi>("/data/2.5/weather", { lat, lon, units: "metric", lang: "ja" }),
+    owm<AirApi>("/data/2.5/air_pollution", { lat, lon }).catch(() => null),
+    owm<AirApi>("/data/2.5/air_pollution/forecast", { lat, lon }).catch(() => null),
+    getForecast(lat, lon),
+    getPollen(lat, lon),
   ]);
 
-  const tz = fc.city.timezone;
-  const now = local(cur.dt, cur.timezone);
+  // 「今」はサーバーの時計から（観測時刻は数十分遅れることがあるため）
+  const now = localIso(Math.floor(Date.now() / 1000), forecast.utcOffset);
+  const today = now.slice(0, 10);
+  const observed = localIso(cur.dt, cur.timezone);
 
-  // 3時間ごとの予報を日付ごとにまとめる
-  const byDate = new Map<string, { slots: Slot[]; winds: number[] }>();
-  for (const item of fc.list) {
-    const { date, time } = local(item.dt, tz);
-    const slot: Slot = {
-      time,
-      temp: item.main.temp,
-      humidity: item.main.humidity,
-      pop: Math.round(item.pop * 100),
-      icon: item.weather[0]?.icon ?? "01d",
-      description: item.weather[0]?.description ?? "",
+  // PM2.5 を日付ごとに集計
+  const airByDate = new Map<string, number[]>();
+  for (const item of airFc?.list ?? []) {
+    const date = localIso(item.dt, forecast.utcOffset).slice(0, 10);
+    airByDate.set(date, [...(airByDate.get(date) ?? []), item.components.pm2_5]);
+  }
+  const air: WeatherResponse["air"] = {};
+  for (const [date, values] of airByDate) {
+    air[date] = {
+      pm25Avg: Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10,
+      pm25Max: Math.round(Math.max(...values) * 10) / 10,
     };
-    const entry = byDate.get(date) ?? { slots: [], winds: [] };
-    entry.slots.push(slot);
-    entry.winds.push(item.wind.speed);
-    byDate.set(date, entry);
   }
 
-  const days: Day[] = [...byDate.entries()].map(([date, { slots, winds }]) => {
-    // その日の代表の天気は「お昼に一番近い時間帯」
-    const noon = slots.reduce((best, s) =>
-      Math.abs(parseInt(s.time) - 12) < Math.abs(parseInt(best.time) - 12) ? s : best
-    );
-    return {
-      date,
-      min: Math.min(...slots.map((s) => s.temp)),
-      max: Math.max(...slots.map((s) => s.temp)),
-      humidity: Math.round(slots.reduce((a, s) => a + s.humidity, 0) / slots.length),
-      pop: Math.max(...slots.map((s) => s.pop)),
-      wind: Math.max(...winds),
-      icon: noon.icon,
-      description: noon.description,
-      slots,
-    };
-  });
-
-  // 今日の分が予報に無い（夜遅い時間など）場合は現在の天気で補う
-  if (!days.length || days[0].date !== now.date) {
-    days.unshift({
-      date: now.date,
-      min: cur.main.temp,
-      max: cur.main.temp,
-      humidity: cur.main.humidity,
-      pop: fc.list[0] ? Math.round(fc.list[0].pop * 100) : 0,
-      wind: cur.wind.speed,
-      icon: cur.weather[0]?.icon ?? "01d",
-      description: cur.weather[0]?.description ?? "",
-      slots: [],
-    });
-  } else {
-    // 今日の最高・最低に現在の気温も反映
+  const days = forecast.days.filter((d) => d.date >= today);
+  // 今日の最高・最低に現在の気温も反映
+  if (days[0]?.date === today) {
     days[0].min = Math.min(days[0].min, cur.main.temp);
     days[0].max = Math.max(days[0].max, cur.main.temp);
   }
 
+  const weatherId = cur.weather[0]?.id ?? 800;
   return {
     place,
-    today: now.date,
+    today,
+    now,
     current: {
-      time: now.time,
+      time: observed.slice(11, 16), // 観測時刻
       temp: cur.main.temp,
       feelsLike: cur.main.feels_like,
       humidity: cur.main.humidity,
       wind: cur.wind.speed,
-      pop: fc.list[0] ? Math.round(fc.list[0].pop * 100) : 0,
       icon: cur.weather[0]?.icon ?? "01d",
       description: cur.weather[0]?.description ?? "",
+      raining: weatherId >= 200 && weatherId < 700, // 雷雨・霧雨・雨・雪
+      pm25: airNow?.list[0]?.components.pm2_5 ?? null,
     },
+    minutely: forecast.minutely.filter((m) => m.time >= now.slice(0, 13)),
     days,
+    air,
+    pollen,
   };
 }

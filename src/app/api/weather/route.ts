@@ -4,6 +4,7 @@ import { WeatherError, findCity, getWeather, placeFromCoords } from "@/lib/openw
 // ブラウザはここを呼ぶだけ。API キーはサーバー内でのみ使われ、ブラウザには届かない。
 //   /api/weather?q=東京
 //   /api/weather?lat=35.68&lon=139.76
+//   /api/weather?lat=35.68&lon=139.76&name=勤務先&country=JP
 export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
   const q = sp.get("q")?.trim();
@@ -15,7 +16,11 @@ export async function GET(request: NextRequest) {
     if (q) {
       place = await findCity(q.slice(0, 100));
     } else if (sp.has("lat") && sp.has("lon") && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
-      place = await placeFromCoords(lat, lon);
+      // お気に入りから開くときは登録済みの名前をそのまま使う
+      const name = sp.get("name")?.trim().slice(0, 50);
+      place = name
+        ? { name, country: sp.get("country")?.slice(0, 2) ?? "", lat, lon }
+        : await placeFromCoords(lat, lon);
     } else {
       return Response.json({ error: "都市名か現在地を指定してください" }, { status: 400 });
     }

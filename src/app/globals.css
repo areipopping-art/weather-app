@@ -17,6 +17,14 @@
   --sky-ink: #8fb4d6;
   --accent: #bcaae8;
   --accent-ink: #4e4470;
+  --pink: #f8dbe6;
+  --bar: #a9cdee;
+  /* 段階の色（必ず文字ラベルと一緒に使う） */
+  --tone-good: #d2f0e3;
+  --tone-fair: #fbf0c4;
+  --tone-warn: #fddcc4;
+  --tone-bad: #f8d0dc;
+  --tone-danger: #f4c0c6;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -36,6 +44,13 @@
     --sky-ink: #a9c8e6;
     --accent: #a897da;
     --accent-ink: #2b2838;
+    --pink: #6e5060;
+    --bar: #7fa9d1;
+    --tone-good: #46675c;
+    --tone-fair: #6a6449;
+    --tone-warn: #725a48;
+    --tone-bad: #70505d;
+    --tone-danger: #7a4f57;
   }
 }
 
@@ -53,6 +68,13 @@
   --color-sky-ink: var(--sky-ink);
   --color-accent: var(--accent);
   --color-accent-ink: var(--accent-ink);
+  --color-pink: var(--pink);
+  --color-bar: var(--bar);
+  --color-tone-good: var(--tone-good);
+  --color-tone-fair: var(--tone-fair);
+  --color-tone-warn: var(--tone-warn);
+  --color-tone-bad: var(--tone-bad);
+  --color-tone-danger: var(--tone-danger);
   --font-sans: var(--font-rounded), "Hiragino Maru Gothic ProN", system-ui, sans-serif;
   --shadow-soft: 0 6px 20px #b9a7e626;
 }
